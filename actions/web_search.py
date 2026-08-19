@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 
+#know the root folder
 def _get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
@@ -12,22 +13,22 @@ def _get_base_dir() -> Path:
 BASE_DIR        = _get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
-
+#reads api key from api key json file
 def _get_api_key() -> str:
     with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)["gemini_api_key"]
 
-
+#user's search request / live google search 
 def _gemini_search(query: str) -> str:
     from google import genai
 
     client   = genai.Client(api_key=_get_api_key())
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash", #model update
         contents=query,
         config={"tools": [{"google_search": {}}]},
     )
-
+    #extracts text from the response, validation (making sure its not empty)
     text = ""
     for part in response.candidates[0].content.parts:
         if hasattr(part, "text") and part.text:
@@ -38,7 +39,7 @@ def _gemini_search(query: str) -> str:
         raise ValueError("Gemini returned an empty response.")
     return text
 
-
+#performs ddg search, retruns list of dicts with title, snippet, url
 def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
     try:
         from ddgs import DDGS
@@ -55,7 +56,7 @@ def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
             })
     return results
 
-
+#fallback to ddg news search
 def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
     """DDG news search — returns actual articles, not website homepages."""
     try:
@@ -78,7 +79,7 @@ def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
         results = _ddg_search(query, max_results=max_results)
     return results
 
-
+#readble text response (formatting)
 def _format_ddg(query: str, results: list[dict]) -> str:
     if not results:
         return f"No results found for: {query}"
@@ -128,7 +129,7 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
         contents=f"Current world news: {n} headlines. Numbered list, titles only.",
         config={"tools": [{"google_search": {}}]},
     )
-
+#parsing raw text in clean lines
     raw = ""
     for part in response.candidates[0].content.parts:
         if hasattr(part, "text") and part.text:
@@ -173,7 +174,7 @@ def _news(query: str) -> str:
     ddg_query    = query if query else "world news today"
 
     result_box  = [None]   # first valid result lands here
-    lock        = threading.Lock()
+    lock        = threading.Lock() #doing multiple things at the same time
     done_evt    = threading.Event()
     failures    = [0]
 
@@ -188,7 +189,7 @@ def _news(query: str) -> str:
                 failures[0] += 1
                 if failures[0] >= 2:   # both failed — unblock caller
                     done_evt.set()
-
+#try to get gemini news, if fails, store empty string (same as ddg news)
     def _try_gemini():
         try:
             _store(_gemini_search(gemini_query))
@@ -203,14 +204,14 @@ def _news(query: str) -> str:
         except Exception as e:
             print(f"[WebSearch] ⚠️ DDG news failed ({e})")
             _store("")
-
+#daemon = background thread, will not block program exit
     threading.Thread(target=_try_gemini, daemon=True).start()
     threading.Thread(target=_try_ddg,    daemon=True).start()
 
     done_evt.wait(timeout=10.0)
     return result_box[0] or f"No news found for: {query}"
 
-
+#research mode, deep dive into a topic, Gemini first, DDG fallback
 def _research(query: str) -> str:
     """
     Deep dive — asks Gemini for a comprehensive answer with context.
@@ -227,7 +228,7 @@ def _research(query: str) -> str:
         results = _ddg_search(query, max_results=10)
         return _format_ddg(query, results)
 
-
+#feats - same skeleton
 def _price(query: str) -> str:
     """Product price lookup — searches for current market prices."""
     price_query = f"current price of {query} — how much does it cost today"
@@ -268,7 +269,7 @@ def _compare(items: list[str], aspect: str) -> str:
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
-
+#ties everything together
 def web_search(
     parameters:     dict,
     response=None,

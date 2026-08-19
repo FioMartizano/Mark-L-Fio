@@ -1236,7 +1236,7 @@ class JarvisLive:
             client = _genai.Client(api_key=_get_api_key())
             resp   = await asyncio.to_thread(
                 client.models.generate_content,
-                model="gemini-2.5-flash",
+                model="gemini-3.6-flash",
                 contents=prompt,
             )
             summary = (resp.text or "").strip()
@@ -1396,7 +1396,7 @@ class JarvisLive:
                 await asyncio.sleep(0.5)
 
     # ── main loop ───────────────────────────────────────────────────────────
-
+#main loop that keeps Jarvis running
     async def run(self):
         self._loop = asyncio.get_event_loop()
 

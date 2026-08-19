@@ -433,8 +433,8 @@ def create_tts_player(config: dict) -> TTSPlayer:
         speed  = float(config.get("tts_speed", 1.0))
         engine = KokoroTTSEngine(voice=voice, speed=speed)
     elif engine_name == "elevenlabs":
-        api_key  = config.get("elevenlabs_api_key", "")
-        voice_id = config.get("tts_voice", "pNInz6obpgDQGcFmaJgB")
+        api_key  = config.get("elevenlabs_api_key", "") #api key for access
+        voice_id = config.get("tts_voice", "pNInz6obpgDQGcFmaJgB") #voice id for changing voice
         engine   = ElevenLabsTTSEngine(api_key=api_key, voice_id=voice_id)
     else:   # edgetts (default)
         voice  = config.get("tts_voice", "en-US-GuyNeural")

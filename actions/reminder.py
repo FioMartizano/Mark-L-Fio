@@ -32,7 +32,7 @@ def _scripts_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-
+#clean reminder text for safe use in scripts and notifications
 def _sanitise(text: str, max_len: int = 200) -> str:
     return (
         text.replace("\\", "")
