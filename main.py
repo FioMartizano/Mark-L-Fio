@@ -32,6 +32,7 @@ from ui import JarvisUI
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
     save_session_summary, pop_last_session,
+    load_personal_memory, format_personal_memory,
 )
 
 from actions.file_processor import file_processor
@@ -662,6 +663,9 @@ class JarvisLive:
         mem_str    = format_memory_for_prompt(memory)
         sys_prompt = _load_system_prompt()
 
+        personal_memory = load_personal_memory()
+        personal_mem_str = format_personal_memory(personal_memory)
+
         now      = datetime.now()
         time_str = now.strftime("%A, %B %d, %Y — %I:%M %p")
         time_ctx = (
@@ -683,8 +687,13 @@ class JarvisLive:
         )
 
         parts = [time_ctx, identity_ctx]
+
         if mem_str:
             parts.append(mem_str)
+
+        if personal_mem_str:
+            parts.append(personal_mem_str)
+
         parts.append(sys_prompt)
 
         return types.LiveConnectConfig(
@@ -1102,15 +1111,39 @@ class JarvisLive:
                     instead of a fixed sleep so there is no unnecessary gap.
         """
         memory   = load_memory()
+
+        personal_memory = load_personal_memory()
+        routines = personal_memory.get("routines", {})
+        morning = routines.get("morning", {})
+
         identity = memory.get("identity", {})
+
+        music = morning.get("music", {})
 
         def _val(k: str) -> str:
             e = identity.get(k, {})
             return (e.get("value", "") if isinstance(e, dict) else str(e)).strip()
 
-        lang = _val("language")
-        name = _val("name")
+
         time_str = datetime.now().strftime("%H:%M")
+
+        # added morning music 
+        if music.get("enabled", False):
+            title = music.get("title", "").strip()
+            artist = music.get("artist", "").strip()
+
+            if title:
+                music_query = f"{title} {artist}".strip()
+
+                await asyncio.to_thread(
+                    youtube_video,
+                    parameters={
+                        "action": "play",
+                        "query": music_query,
+                    },
+                    response=None,
+                    player=self.ui,
+                )        
 
         # Start fetching news immediately — runs in parallel while phase 1 plays
         loop = asyncio.get_event_loop()
@@ -1121,26 +1154,15 @@ class JarvisLive:
             return
 
         # ── Phase 1: instant greeting ─────────────────────────────────────────
-        lang_clause = f" Respond in {lang}." if lang else ""
-        name_clause = f" Address the user as {name}." if name else ""
-
-        # Inject last session context if available — pop removes it so it's never repeated
-        last = await asyncio.to_thread(pop_last_session)
-        session_clause = ""
-        if last:
-            try:
-                _delta = (datetime.now() - datetime.strptime(last["date"], "%Y-%m-%d")).days
-                _when  = "earlier today" if _delta == 0 else ("yesterday" if _delta == 1 else f"{_delta} days ago")
-            except Exception:
-                _when = "last time"
-            session_clause = (
-                f" Also briefly and naturally mention that {_when}: {last['summary']}"
-            )
-
         p1 = (
-            f"Greet the user warmly, mention it is {time_str}, and say you are fetching today's news now.{session_clause} "
-            f"Keep it to 2 short sentences max. Do not call any tools.{lang_clause}{name_clause}"
-        )
+    f"Greet Fio in polished British English. "
+    f"It is {time_str}. "
+    "Give a concise, calm, slightly witty greeting and mention that "
+    "today's briefing is being prepared. "
+    "Do not mention previous conversations or stored memory. "
+    "Keep it to 1–2 short sentences. "
+    "Do not call any tools."
+)
 
         # Clear the turn-done event so we can wait for Phase 1 to finish
         if self._turn_done_event:
@@ -1155,7 +1177,6 @@ class JarvisLive:
         # ── Phase 2: fire as soon as Phase 1 audio is done ───────────────────
         async def _deliver_news():
             try:
-                lang_str = f" Respond in {lang}." if lang else ""
 
                 # Wait for news fetch (already running) and Phase 1 turn-complete
                 # in parallel — whichever takes longer determines the wait time
@@ -1192,12 +1213,13 @@ class JarvisLive:
                     p2 = (
                         f"[BRIEFING] Here are today's top news headlines:\n{news_text}\n\n"
                         "Pick ONE headline, summarise it in one sentence, then say the full list "
-                        f"is displayed on screen. Do not call any tools.{lang_str}"
+                        "is displayed on screen. Do not call any tools. "
+                        "Respond in polished British English."
                     )
                 else:
                     p2 = (
                         "News headlines could not be fetched right now. "
-                        f"Let the user know briefly.{lang_str}"
+                        "Let the user know briefly in polished British English."
                     )
 
                 await self.session.send_client_content(

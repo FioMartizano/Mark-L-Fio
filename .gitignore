@@ -4,7 +4,13 @@ __pycache__/
 *.pyo
 *.pyd
 
+memory/identity.json
+memory/working_style.json
+memory/projects.json
+memory/routines.json
+memory/interests.json
 memory/long_term.json
+
 config/api_keys.json
 
 *.log

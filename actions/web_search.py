@@ -24,7 +24,7 @@ def _gemini_search(query: str) -> str:
 
     client   = genai.Client(api_key=_get_api_key())
     response = client.models.generate_content(
-        model="gemini-2.5-flash", #model update
+        model="gemini-3.6-flash", #model update
         contents=query,
         config={"tools": [{"google_search": {}}]},
     )
@@ -154,13 +154,24 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
 def _search(query: str) -> str:
-    """Default search — Gemini grounded, DDG fallback."""
+    """Default search — DDGS primary, Gemini fallback."""
     try:
-        return _gemini_search(query)
-    except Exception as e:
-        print(f"[WebSearch] ⚠️ Gemini failed ({e}) — trying DDG...")
         results = _ddg_search(query)
-        return _format_ddg(query, results)
+        formatted = _format_ddg(query, results)
+
+        if results:
+            return formatted
+
+        raise ValueError("DDGS returned no results.")
+
+    except Exception as e:
+        print(f"[WebSearch] ⚠️ DDGS failed ({e}) — trying Gemini...")
+
+        try:
+            return _gemini_search(query)
+        except Exception as gemini_error:
+            print(f"[WebSearch] ❌ Gemini fallback failed ({gemini_error})")
+            return f"Search failed: {gemini_error}"
 
 
 def _news(query: str) -> str:

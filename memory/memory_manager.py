@@ -10,10 +10,80 @@ def get_base_dir() -> Path:
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
 
-
+# added a new memory directory for storing various json files
 BASE_DIR         = get_base_dir()
 MEMORY_PATH      = BASE_DIR / "memory" / "long_term.json"
-_lock            = Lock()
+MEMORY_DIR       = BASE_DIR / "memory"
+
+IDENTITY_PATH       = MEMORY_DIR / "identity.json"
+WORKING_STYLE_PATH  = MEMORY_DIR / "working_style.json"
+PROJECTS_PATH       = MEMORY_DIR / "projects.json"
+ROUTINES_PATH       = MEMORY_DIR / "routines.json"
+INTERESTS_PATH      = MEMORY_DIR / "interests.json"
+
+_lock = Lock()
+
+def _load_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[Memory] ⚠️ Failed to load {path.name}: {e}")
+        return {}
+
+def load_personal_memory() -> dict:
+    return {
+        "identity": _load_json_file(IDENTITY_PATH),
+        "working_style": _load_json_file(WORKING_STYLE_PATH),
+        "projects": _load_json_file(PROJECTS_PATH),
+        "routines": _load_json_file(ROUTINES_PATH),
+        "interests": _load_json_file(INTERESTS_PATH),
+    }
+
+def format_personal_memory(memory: dict) -> str:
+    if not memory:
+        return ""
+
+    lines = [
+        "[FIO'S PERSONAL CONTEXT — use naturally, do not recite]"
+    ]
+
+    for category, data in memory.items():
+        if not data:
+            continue
+
+        lines.append("")
+        lines.append(category.replace("_", " ").title() + ":")
+
+        for key, value in data.items():
+            if isinstance(value, dict):
+                lines.append(f"  {key.replace('_', ' ').title()}:")
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, list):
+                        lines.append(
+                            f"    {sub_key.replace('_', ' ').title()}: "
+                            + ", ".join(str(item) for item in sub_value)
+                        )
+                    else:
+                        lines.append(
+                            f"    {sub_key.replace('_', ' ').title()}: "
+                            f"{sub_value}"
+                        )
+            elif isinstance(value, list):
+                lines.append(
+                    f"  {key.replace('_', ' ').title()}: "
+                    + ", ".join(str(item) for item in value)
+                )
+            else:
+                lines.append(
+                    f"  {key.replace('_', ' ').title()}: {value}"
+                )
+
+    return "\n".join(lines)
+    
 MAX_VALUE_LENGTH = 380
 MEMORY_MAX_CHARS = 2200
 

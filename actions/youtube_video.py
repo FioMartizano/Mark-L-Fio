@@ -292,6 +292,12 @@ def _handle_play(parameters: dict, player) -> str:
     if video_url:
         print(f"[YouTube] ▶️ Opening: {video_url}")
         _open_url(video_url)
+
+        # Give Chrome time to load the YouTube video, then start playback.
+        if _PYAUTOGUI:
+            time.sleep(3)
+            pyautogui.press("k")
+
         return f"Playing: {query}"
 
     print(f"[YouTube] ⚠️ Scrape failed, opening filtered search page")
