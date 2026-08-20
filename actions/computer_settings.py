@@ -7,6 +7,13 @@ import subprocess
 import platform
 from pathlib import Path
 
+from actions.window_target import (
+    focus_target_window,
+    target_exists,
+    target_closed,
+    describe_foreground_window,
+)
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = True
@@ -172,13 +179,53 @@ def brightness_down():
         except Exception as e:
             print(f"[Settings] Brightness down failed on Windows: {e}")
 
-def close_app():
-    if _OS == "Darwin": pyautogui.hotkey("command", "q")
-    else:               pyautogui.hotkey("alt", "f4")
+#modified
+def close_app(target=None):
+    if target:
+        ok, message = focus_target_window(target)
 
-def close_window():
-    if _OS == "Darwin": pyautogui.hotkey("command", "w")
-    else:               pyautogui.hotkey("ctrl", "w")
+        if not ok:
+            return f"FAILED: {message}. Nothing was closed."
+
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "q")
+    else:
+        pyautogui.hotkey("alt", "f4")
+
+    if target:
+        if target_closed(target):
+            return f"Closed {target}."
+
+        return (
+            f"FAILED: attempted to close {target}, "
+            f"but it could not be verified as closed."
+        )
+
+    return "Closed the current application."
+
+
+def close_window(target=None):
+    if target:
+        ok, message = focus_target_window(target)
+
+        if not ok:
+            return f"FAILED: {message}. Nothing was closed."
+
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "w")
+    else:
+        pyautogui.hotkey("ctrl", "w")
+
+    if target:
+        if target_closed(target):
+            return f"Closed window: {target}."
+
+        return (
+            f"FAILED: attempted to close {target}, "
+            f"but the target could not be verified as closed."
+        )
+
+    return "Closed the current window."
 
 def full_screen():
     if _OS == "Darwin": pyautogui.hotkey("ctrl", "command", "f")
@@ -521,6 +568,8 @@ def shutdown_computer():
         subprocess.run(["systemctl", "poweroff"], capture_output=True)
 
 ACTION_MAP: dict[str, callable] = {
+    "debug_foreground": describe_foreground_window,
+
     "volume_up":           volume_up,
     "volume_down":         volume_down,
     "mute":                volume_mute,
@@ -585,7 +634,6 @@ ACTION_MAP: dict[str, callable] = {
 _DANGEROUS_ACTIONS = {"restart", "shutdown"}
 
 
-
 def _detect_action(description: str) -> dict:
 
     from google import genai as _genai
@@ -601,24 +649,55 @@ The user issued a command (possibly in any language): "{description}"
 Available actions: {available}
 
 Return ONLY a valid JSON object:
-{{"action": "action_name", "value": null_or_value}}
+{{
+    "action": "action_name",
+    "target": null_or_target_application,
+    "value": null_or_value
+}}
 
 Rules:
 - Pick the single best matching action from the available list.
-- For volume_set: value is an integer 0-100.
-- For type_text: value is the exact text to type.
-- For press_key: value is the key name (e.g. "f5", "tab", "enter").
-- For reload_n: value is an integer (number of times to reload).
-- If no clear match, pick the closest action.
-- Return ONLY the JSON, no explanation, no markdown."""
+- Preserve the application or window named by the user as "target".
+- If the user does not specify an application or window, set "target" to null.
+- Never invent a target.
+
+Examples:
+- "Close File Explorer" → action = "close_app", target = "File Explorer"
+- "Close Microsoft Edge" → action = "close_app", target = "Microsoft Edge"
+- "Type hello into Notion" → action = "type_text", target = "Notion", value = "hello"
+- "Type hello" → action = "type_text", target = null, value = "hello"
+- "Press F5 in Microsoft Edge" → action = "press_key", target = "Microsoft Edge", value = "f5"
+
+For volume_set: value is an integer 0-100.
+For type_text: value is the exact text to type.
+For press_key: value is the key name (e.g. "f5", "tab", "enter").
+For reload_n: value is an integer (number of times to reload).
+
+If no clear match, pick the closest action.
+
+Return ONLY the JSON, no explanation, no markdown."""
 
     try:
-        resp = _client.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
-        text = re.sub(r"```(?:json)?", "", resp.text).strip().rstrip("`").strip()
+        resp = _client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt
+        )
+
+        text = re.sub(
+            r"```(?:json)?",
+            "",
+            resp.text
+        ).strip().rstrip("`").strip()
+
         return json.loads(text)
+
     except Exception as e:
         print(f"[Settings] Intent detection failed: {e}")
-        return {"action": description.lower().replace(" ", "_"), "value": None}
+        return {
+            "action": description.lower().replace(" ", "_"),
+            "target": None,
+            "value": None
+        }
 
 def computer_settings(
     parameters: dict = None,
@@ -632,11 +711,18 @@ def computer_settings(
     params      = parameters or {}
     raw_action  = params.get("action", "").strip()
     description = params.get("description", "").strip()
+    target      = params.get("target", "").strip()
     value       = params.get("value", None)
 
-    if not raw_action and description:
-        detected   = _detect_action(description)
-        raw_action = detected.get("action", "")
+    if description and (not raw_action or not target):
+        detected = _detect_action(description)
+
+        if not raw_action:
+            raw_action = detected.get("action", "")
+
+        if not target:
+            target = detected.get("target") or ""
+
         if value is None:
             value = detected.get("value")
 
@@ -694,6 +780,14 @@ def computer_settings(
         scroll_down(int(value or 500))
         return "Scrolled down."
 
+        # Targeted window actions
+    if action == "close_app":
+        return close_app(target or None)
+
+    if action == "close_window":
+        return close_window(target or None)
+
+    # All other actions use their existing behavior
     func = ACTION_MAP.get(action)
     if not func:
         return f"Unknown action: '{raw_action}'."

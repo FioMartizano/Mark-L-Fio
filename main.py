@@ -244,6 +244,17 @@ TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {
                 "action":      {"type": "STRING", "description": "The action to perform"},
+
+                "target":      {
+                    "type": "STRING",
+                    "description": (
+                        "The application or window the action should target. "
+                        "Examples: File Explorer, Microsoft Edge, Notion, "
+                        "Visual Studio Code. Use this when the user explicitly "
+                        "names an application or window."
+                    )
+                },
+
                 "description": {"type": "STRING", "description": "Natural language description of what to do"},
                 "value":       {"type": "STRING", "description": "Optional value: volume level, text to type, etc."}
             },
