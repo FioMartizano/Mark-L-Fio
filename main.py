@@ -700,6 +700,16 @@ class JarvisLive:
             response_modalities=["AUDIO"],
             output_audio_transcription={},
             input_audio_transcription={},
+
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    disabled=False,
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                    prefix_padding_ms=100,
+                    silence_duration_ms=500,
+                )
+            ),
             system_instruction="\n".join(parts),
             tools=[{"function_declarations": TOOL_DECLARATIONS}],
             session_resumption=types.SessionResumptionConfig(),

@@ -18,14 +18,14 @@ class ProactiveEngine:
       - Smarter silence gate    (doesn't fire while JARVIS is speaking)
 
     Defaults:
-      min_silence_secs  — 900 s  (15 min) user must be silent before any check
-      check_cooldown    — 1200 s (20 min) minimum gap between proactive messages
+      min_silence_secs  — 300 s  (5 min) user must be silent before any check
+      check_cooldown    — 900 s (15 min) minimum gap between proactive messages
     """
 
     def __init__(
         self,
-        min_silence_secs: int = 900,
-        check_cooldown:   int = 1200,
+        min_silence_secs: int = 300,
+        check_cooldown:   int = 900,
     ):
         self.min_silence_secs = min_silence_secs
         self.check_cooldown   = check_cooldown
