@@ -35,6 +35,16 @@ from memory.memory_manager import (
     load_personal_memory, format_personal_memory,
 )
 
+from memory.task_manager import (
+    add_task,
+    complete_task,
+    delete_task,
+    get_today_tasks,
+    get_upcoming_tasks,
+    get_all_pending_tasks,
+    find_pending_task,
+)
+
 from actions.file_processor import file_processor
 from actions.flight_finder     import flight_finder
 from actions.open_app          import open_app
@@ -530,11 +540,20 @@ TOOL_DECLARATIONS = [
     {
         "name": "save_memory",
         "description": (
-            "Save an important personal fact about the user to long-term memory. "
-            "Call this silently whenever the user reveals something worth remembering: "
-            "name, age, city, job, preferences, hobbies, relationships, projects, or future plans. "
-            "Do NOT call for: weather, reminders, searches, or one-time commands. "
-            "Do NOT announce that you are saving — just call it silently. "
+            "Save ONLY stable, long-term personal information about the user. "
+            "Use this tool when the user explicitly provides information that should remain "
+            "useful across future conversations for weeks, months, or longer. "
+            "Examples: identity, stable preferences, lasting interests, important relationships, "
+            "long-running projects, or persistent personal goals. "
+            "Do NOT save temporary plans, today's activities, tasks, reminders, appointments, "
+            "one-time intentions, casual statements, current mood, temporary schedules, "
+            "or conversational context. "
+            "Future plans that are specific actions or tasks belong in the task/reminder system, "
+            "not long-term memory. "
+            "Do NOT save task completions as long-term memories unless the user "
+            "explicitly states a lasting change in their project or personal status. "
+            "When uncertain, DO NOT save. "
+            "Do not announce that you are saving. "
             "Values must be in English regardless of the conversation language."
         ),
         "parameters": {
@@ -547,8 +566,8 @@ TOOL_DECLARATIONS = [
                         "preferences — favorite food/color/music/film/game/sport, hobbies | "
                         "projects — active projects, goals, things being built | "
                         "relationships — friends, family, partner, colleagues | "
-                        "wishes — future plans, things to buy, travel dreams | "
-                        "notes — habits, schedule, anything else worth remembering"
+                        "wishes — stable long-term aspirations, lasting personal ambitions, or enduring wants | "
+                        "notes — stable personal facts that do not fit another category"
                     )
                 },
                 "key":   {"type": "STRING", "description": "Short snake_case key (e.g. name, favorite_food, sister_name)"},
@@ -557,6 +576,98 @@ TOOL_DECLARATIONS = [
             "required": ["category", "key", "value"]
         }
     },
+
+        {
+        "name": "manage_task",
+        "description": (
+            "Manages the user's task list. "
+            "Tasks are separate from long-term personal memory. "
+            "NEVER use save_memory for tasks. "
+            "Use action='add' when the user says they need to do something, "
+            "asks you to add a task, or explicitly creates a task. "
+            "Use action='complete' when the user says they finished, completed, "
+            "did, accomplished, or are done with a task. "
+            "Natural completion statements such as "
+            "'I finished coding for my Capstone', "
+            "'I already did that', or "
+            "'I completed the reservation work' "
+            "should be treated as task completion even if the user does not "
+            "explicitly say 'mark it complete'. "
+            "Use task_query to identify the task from the user's description "
+            "when no task ID is provided. "
+            "Use action='delete' when the user asks to remove or delete a task. "
+            "Actions: add, complete, delete."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "add | complete | delete"
+                },
+                "title": {
+                    "type": "STRING",
+                    "description": "Task title for add"
+                },
+                "project": {
+                    "type": "STRING",
+                    "description": "Optional project associated with the task"
+                },
+                "due": {
+                    "type": "STRING",
+                    "description": "Due date in YYYY-MM-DD format. Use null if there is no specific date."
+                },
+                "task_id": {
+                    "type": "STRING",
+                    "description": "Task ID for complete or delete"
+                },
+                "task_query": {
+                    "type": "STRING",
+                    "description": (
+                        "Natural-language description of the task when the user "
+                        "wants to complete or delete a task without providing its ID."
+                    )       
+                }        
+            },
+            "required": ["action"]
+        }
+    },
+
+        {
+        "name": "get_tasks",
+        "description": (
+            "Retrieves the user's tasks from the dedicated task store. "
+            "Tasks are separate from long-term personal memory. "
+            "Choose the action based strictly on what the user asks: "
+            "'pending' means ALL unfinished tasks regardless of due date; "
+            "'today' means ONLY unfinished tasks whose due date is today; "
+            "'upcoming' means ONLY unfinished tasks whose due date is a future date. "
+            "If the user asks 'What are my tasks?', 'What tasks do I have?', "
+            "or 'What do I need to do?', use 'pending'. "
+            "If the user asks 'What are my tasks today?', 'What do I have today?', "
+            "or explicitly asks what is due today, use 'today'. "
+            "If the user asks 'What are my upcoming tasks?', 'What's coming up?', "
+            "or asks about future tasks, use 'upcoming'. "
+            "Do not treat an undated pending task as a task for today. "
+            "Do not use long-term memory to answer task questions. "
+            "IMPORTANT: This tool is ONLY for viewing or listing tasks. "
+            "If the user says they finished, completed, did, accomplished, "
+            "or are done with a task, DO NOT use get_tasks. "
+            "Use manage_task with action='complete' instead."
+        ),
+
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "description": "today | upcoming | pending"
+                }
+            },
+            "required": ["action"]
+        }
+    },
+
 ]
 
 # --- Plugin system ---
@@ -741,18 +852,165 @@ class JarvisLive:
         self.ui.set_state("THINKING")
 
         if name == "save_memory":
-            category = args.get("category", "notes")
-            key      = args.get("key", "")
-            value    = args.get("value", "")
-            if key and value:
-                update_memory({category: {key: {"value": value}}})
-                print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
+                category = args.get("category", "notes")
+                key      = args.get("key", "").strip()
+                value    = args.get("value", "").strip()
+
+                # Hard safety gate:
+                # Long-term memory must never be used for temporary plans,
+                # reminders, schedules, or current-day state.
+                temporary_keys = {
+                    "coffee_plan",
+                    "lunch_plan",
+                    "dinner_plan",
+                    "today_plan",
+                    "daily_plan",
+                    "current_plan",
+                    "temporary_plan",
+                    "schedule",
+                    "reminder",
+                    "task",
+                    "current_task",
+                    "upcoming_task",
+                }
+
+                temporary_categories = {
+                    "reminders",
+                    "tasks",
+                    "schedule",
+                    "temporary",
+                    "current_state",
+                }
+
+                if category in temporary_categories or key.lower() in temporary_keys:
+                    print(
+                        f"[Memory] 🚫 Rejected temporary memory: "
+                        f"{category}/{key} = {value}"
+                    )
+                    return types.FunctionResponse(
+                        id=fc.id,
+                        name=name,
+                        response={
+                            "result": "rejected",
+                            "reason": "Temporary information does not belong in long-term memory.",
+                            "silent": True,
+                        }
+                    )
+
+                if key and value:
+                    update_memory({category: {key: {"value": value}}})
+                    print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
+
+                if not self.ui.muted:
+                    self.ui.set_state("LISTENING")
+
+                return types.FunctionResponse(
+                    id=fc.id,
+                    name=name,
+                    response={"result": "ok", "silent": True}
+                )
+
+        if name == "manage_task":
+            action = args.get("action", "").lower().strip()
+
+            if action == "add":
+                title = args.get("title", "").strip()
+                project = args.get("project", "").strip()
+                due = args.get("due")
+
+                result = await asyncio.to_thread(
+                    add_task,
+                    title,
+                    project,
+                    due,
+                    )
+
+            elif action == "complete":
+                task_id = args.get("task_id", "").strip()
+                task_query = args.get("task_query", "").strip()
+
+                # If no task ID was provided, find the task by description.
+                if not task_id and task_query:
+                    matched_task = await asyncio.to_thread(
+                        find_pending_task,
+                        task_query,
+                    )
+
+                    if matched_task:
+                        task_id = matched_task["id"]
+
+                if task_id:
+                    result = await asyncio.to_thread(
+                        complete_task,
+                        task_id,
+                    )
+
+                    if result.get("success"):
+                        result["message"] = (
+                            f"Task completed: {result['task']['title']}"
+                        )
+                else:
+                    result = {
+                        "success": False,
+                        "message": (
+                            "I couldn't identify which pending task "
+                            "the user meant."
+                        )
+                    }
+
+            elif action == "delete":
+                task_id = args.get("task_id", "").strip()
+
+                result = await asyncio.to_thread(
+                    delete_task,
+                    task_id,
+                )
+
+            else:
+                result = {
+                    "success": False,
+                    "message": "Invalid task action."
+                }
+
             if not self.ui.muted:
                 self.ui.set_state("LISTENING")
+
             return types.FunctionResponse(
-                id=fc.id, name=name,
-                response={"result": "ok", "silent": True}
+                id=fc.id,
+                name=name,
+                response={"result": result}
+                )
+
+        if name == "get_tasks":
+            action = args.get("action", "").lower().strip()
+
+            if action == "today":
+                tasks = await asyncio.to_thread(get_today_tasks)
+
+            elif action == "upcoming":
+                tasks = await asyncio.to_thread(get_upcoming_tasks)
+
+            elif action == "pending":
+                tasks = await asyncio.to_thread(get_all_pending_tasks)
+
+            else:
+                tasks = []
+
+            result = {
+                "count": len(tasks),
+                "tasks": tasks,
+            }
+
+            if not self.ui.muted:
+                self.ui.set_state("LISTENING")
+
+            return types.FunctionResponse(
+                id=fc.id,
+                name=name,
+                response={"result": result}
             )
+
+        
 
         loop   = asyncio.get_event_loop()
         result = "Done."
